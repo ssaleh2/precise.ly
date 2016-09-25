@@ -167,7 +167,7 @@ def procure_HR_data(data_path):
     return HR_cycles
 
 
-def segment_HR_blocks(HR_cycles, seg_len = 6, keep_percent = 0.67):
+def segment_HR_blocks(HR_cycles, seg_len = 24, keep_percent = 0.67):
     num_blocks = 0
     
     final_HR_cycles = [cycle for sublist in HR_cycles.values() for cycle in sublist]
@@ -242,7 +242,7 @@ if __name__ == '__main__':
     final_blocks_df['start_time'] = final_blocks_df.apply(lambda x: x['date'] + timedelta(seconds = x['time_offset'][0]), axis = 1) 
     final_blocks_df['end_time'] = final_blocks_df.apply(lambda x: x['date'] + timedelta(seconds = x['time_offset'][-1]), axis = 1) 
     final_blocks_df = final_blocks_df[~final_blocks_df.date.isnull()]
-    #final_blocks_df['length_of_block'] = final_blocks_df.apply(lambda x: (x['end_time'] - x['start_time']).seconds/(60.0*60), axis = 1)
+    final_blocks_df['length_of_block'] = final_blocks_df.apply(lambda x: (x['end_time'] - x['start_time']).seconds/(60.0*60), axis = 1)
     print "Finished adding columns to df."
     
     high = datetime(2013, 5, 1)
@@ -252,5 +252,5 @@ if __name__ == '__main__':
     print "Limited to dates between 2-22-13 and 4-30-13."
     
     # Output final segemnts to json
-    final_blocks_df.to_json('JSONs/HR_segments.json')
+    final_blocks_df.to_json('JSONs/HR_segments_24_hrs.json')
     print "Finished creating segments JSON."
