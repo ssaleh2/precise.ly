@@ -1,0 +1,41 @@
+
+# Working Files - not ready to be shared
+local*
+local/
+*local*
+*tmp*
+tmp*
+tmp/
+
+#Old - no need to place in repo
+*old
+old*
+old/
+
+#Ipython Notebook
+.ipynb_checkpoints
+
+#Ipython Notebook Temp files
+*copy*.ipynb
+untitled*
+untitled*.ipynb
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OSX Filesystem thing
+.DS_Store
+
+# Ignore temp files from other editors
+*~
+.#*
+.*.sw?
+.idea/
+*.dpkg-*
+*.exe
+*.ZILESAVE
+
+#Ignore settings
+settings.py

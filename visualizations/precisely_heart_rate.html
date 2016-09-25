@@ -1,0 +1,491 @@
+ <!DOCTYPE html>
+<html>
+    <head> 
+        <meta charset="utf-8">
+				
+        <style>
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        }
+
+        .graph .axis {
+            stroke-width: 1;
+        }
+
+        .graph .axis .tick line {
+            stroke: black;
+        }
+
+        .graph .axis .tick text {
+            fill: black;
+            font-size: 0.7em;
+        }
+
+        .graph .axis .domain {
+            fill: none;
+            stroke: black;
+        }
+
+        .graph .group {
+            fill: none;
+            stroke: black;    
+            stroke-width: 2.5;
+        } 
+      
+       .d3-tip {
+        line-height: 1;
+        font-weight: bold;
+        font-size: 15px;
+        font-family: "Courier New";
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.4);
+        color: #fff;
+        border-radius: 2px;
+      }
+
+      /* Creates a small triangle extender for the tooltip */
+      .d3-tip:after {
+        box-sizing: border-box;
+        display: inline;
+        font-size: 10px;
+        width: 100%;
+        line-height: 1;
+        color: rgba(0, 0, 0, 0.4);
+        content: "\25BC";
+        position: absolute;
+        text-align: center;
+      }
+          /* Style northward tooltips differently */
+      .d3-tip.n:after {
+        margin: -1px 0 0 0;
+        top: 100%;
+        left: 0;
+      }
+
+        </style>
+    </head>
+    <body>
+        <div class="graph"></div>
+
+        <script src="http://d3js.org/d3.v3.min.js"></script>
+      	<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-tip/0.6.7/d3-tip.js"></script>  
+    <script>
+        var limit = 60 * 1,
+            duration = 667,
+            now = new Date(Date.now() - duration)
+
+        var width = 800,
+            height = 400;
+				 
+        var tip = d3.tip()  
+        .attr("class", "d3-tip")
+        .offset([-10, 0])
+        .html(function(d) {return "Name: Propranolol " + "<br>" + "Dose: 30 mg" + "<br>" + "Source: PO"});
+        
+        var x = d3.time.scale()
+            .domain([now - (limit - 2), now - duration])
+            .range([0, width])
+
+        var y = d3.scale.linear()
+            .domain([20, 180])
+            .range([height-3, 0+7])
+				
+        var maxIndex = 60;
+        var minIndex = 0;
+        var fullData;
+        var subset;
+				var pitch = 764.81;
+        var index_change_thresh;
+//         var formatDate = d3.time.parse("%Y-%m-%d %H:%M:%S");
+
+        var circle = null;
+        var circleTransition = null;
+        var latestBeat = null;
+        var insideBeat = false;
+          
+        var SECONDS_SAMPLE = 5;
+        var BEAT_TIME = 400;
+        var TICK_FREQUENCY = SECONDS_SAMPLE * 1000 / BEAT_TIME;
+        var BEAT_VALUES = [0, 0, 3, -4, 10, -7, 3, 0, 0];
+
+        var CIRCLE_FULL_RADIUS = 40;
+        var MAX_LATENCY = 5000;  
+            
+        var colorScale = d3.scale.linear()
+					.domain([BEAT_TIME, (MAX_LATENCY - BEAT_TIME) / 2, MAX_LATENCY])
+					.range(["#6D9521", "#D77900", "#CD3333"]);
+
+				var radiusScale = d3.scale.linear()
+					.range([5, CIRCLE_FULL_RADIUS])
+					.domain([MAX_LATENCY, BEAT_TIME]);
+          
+        d3.csv("data.csv", function(error, data) {
+          if (error) throw error;
+          fullData = data;
+          data.forEach(function(d) {
+            d.index = +d.index;
+            d.Time = +d.Time - 2200;
+            d.Heart_Rate = +d.Heart_Rate;
+            d.Alarm_LOW = +d.Alarm_LOW;
+            d.Alarm_HIGH = +d.Alarm_HIGH;
+            d.Alarm_Seg = +d.Alarm_Seg;
+          });
+          
+          
+          subset = data.slice(minIndex, maxIndex);
+        	 
+           var groups = {
+            alarm_top: {
+                value: 0,
+                color: 'grey',
+                data: subset.map(function(d){
+                  		return d.Alarm_HIGH
+                })
+            },
+          
+             
+             
+            HR: {
+                value: 0,
+                color: 'green',
+                data: subset.map(function(d){
+                  		return d.Heart_Rate
+                })
+            },
+             
+            alarm_bottom: {
+                value: 0,
+                color: 'grey',
+                data: subset.map(function(d){
+                  		return d.Alarm_LOW
+                })
+            },
+             alarm_seg: {
+               value: 0,
+               color: 'red',
+               data: subset.map(function(d){
+                  		return d.Alarm_Seg
+                }),           
+            }
+         
+        }
+					var svg = d3.select('.graph').append('svg')
+              .attr('class', 'chart')
+              .attr('width', width)
+              .attr('height', height + 50)
+          		.append("g")
+          		.attr("transform", "translate(50,0)")
+          
+          var line = d3.svg.line()
+              .interpolate('basis')
+          		.defined(function(d) { return d; })
+              .x(function(d, i) {
+                  return x(now - (limit - 1 - i) * duration)
+              })
+              .y(function(d) {
+                  return y(d)
+              });
+
+          var alarm = d3.svg.line()
+              .interpolate('step')
+          		.defined(function(d) { return d; })
+              .x(function(d, i) {
+                  return x(now - (limit - 1 - i) * duration)
+              })
+              .y(function(d) {
+                  return y(d)
+              });
+          
+//           circle = svg.append("circle")
+// 					.attr("fill", "#6D9521")
+// 					.attr("cx", width - 50)
+// 					.attr("cy", height / 8)
+// 					.attr("r", CIRCLE_FULL_RADIUS);
+          logo_image = svg.append("svg:image")
+          .attr("xlink:href", "https://photos-2.dropbox.com/t/2/AACPAgeamMH9Pqwm8qfgBxaOeveu2bDn1biBdysgdCQFZw/12/44674655/png/32x32/1/_/1/2/precisely_no_shadow.png/ELKvmSIYqSwgBygH/468DdTQyet8GP-yo8y3b7M9JiwEWLPCEdNtewgcPu3k?size=800x600&size_mode=3")
+         .attr("x", function(d) { return 0;})
+         .attr("y", function(d) { return 0;})
+          .attr("width", 85)
+          .attr("height", 85);
+    
+         dx_image = svg.append("svg:image")
+          .attr("xlink:href", "https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcTGdTw9a2xeKGu4ezKtjwutax0XzkBuTa2yrtDZ-wTu4g5mgcv2") //"https://cdn0.iconfinder.com/data/icons/healthcare-and-medicine-kit/512/medical_test_stethoscope-512.png")
+         .attr("x", function(d) { return 160;})
+         .attr("y", function(d) { return 25;})
+          .attr("width", 55)
+          .attr("height", 55);
+          
+         dem_image = svg.append("svg:image")
+          .attr("xlink:href", "http://www.arlington-tx.gov/cdp/wp-content/uploads/sites/11/2014/04/Demographics.png")
+         .attr("x", function(d) { return 95;})
+         .attr("y", function(d) { return 25;})
+          .attr("width", 55)
+          .attr("height", 55);
+          
+          icu_image = svg.append("svg:image")
+          .attr("xlink:href", "http://fcmcng.com/wp-content/uploads/2015/03/ICU_Icon-08.png")
+         .attr("x", function(d) { return 225;})
+         .attr("y", function(d) { return 25;})
+          .attr("width", 55)
+          .attr("height", 55);
+           
+          var med_image = svg.append("svg:image")
+          .attr("xlink:href", "https://cdn3.iconfinder.com/data/icons/medical-8/512/medication-512.png")
+         .attr("x", function(d) { return 280;})
+         .attr("y", function(d) { return 25;})
+          .attr("width", 55)
+          .attr("height", 55);
+          
+          var plus = null,
+              med_name,
+              med_change;
+          
+           var gradient = svg.append("defs")
+              .append("linearGradient")
+                .attr("id", "gradient")
+                .attr("x1", "0%")
+                .attr("y1", "0%")
+                .attr("x2", "100%")
+                .attr("y2", "0%")
+                .attr("spreadMethod", "pad");
+          
+          gradient.append("stop")
+          .attr("offset", "0%")
+          .attr("stop-color", "#D14424")
+          .attr("stop-opacity", 0.4);
+
+      		gradient.append("stop")
+          .attr("offset", "100%")
+          .attr("stop-color", "#D14424")
+          .attr("stop-opacity", 0.0);
+
+          
+          var Yaxis = svg.append('g')
+              .attr('class', 'y axis')
+          		.attr("transform", "translate (" + 750 + ", 0)")
+              .call(y.axis = d3.svg.axis().scale(y).orient("left"))
+                        
+          var Xaxis = svg.append('g')
+              .attr('class', 'x axis')
+              .attr('transform', 'translate(-2,' + height + ')')
+              .call(x.axis = d3.svg.axis().scale(x).orient('bottom'))
+
+
+          var paths = svg.append('g')
+					
+          groups['HR'].path = paths.append('path')
+                  .data([groups['HR'].data])
+                  .attr('class', 'HR' + ' group')
+                  .style('stroke', groups['HR'].color)
+          groups['alarm_top'].path = paths.append('path')
+                  .data([groups['alarm_top'].data])
+                  .attr('class', 'alarm_top' + ' group')
+          				.style("stroke-dasharray", ("3, 3"))
+                  .style('stroke', groups['alarm_top'].color)
+          
+          groups['alarm_bottom'].path = paths.append('path')
+                  .data([groups['alarm_bottom'].data])
+                  .attr('class', 'alarm_bottom' + ' group')
+                  .style('stroke', groups['alarm_bottom'].color)
+          				.style("stroke-dasharray", ("3, 3"))
+
+          groups['alarm_seg'].path = paths.append('path')
+                  .data([groups['alarm_seg'].data])
+                  .attr('class', 'alarm_seg' + ' group')
+                  .style('stroke', groups['alarm_seg'].color)
+          
+          // for tool tips
+          svg.call(tip);
+          function mouseover(d) {
+              d3.select(d.data.city.line).classed("city--hover", true);
+              d.data.city.line.parentNode.appendChild(d.data.city.line);
+              focus.attr("transform", "translate(" + x(d.data.date) + "," + y(d.data.value) + ")");
+              focus.select("text").text(d.data.city.name);
+            }
+          
+          function mouseout(d) {
+              d3.select(d.data.city.line).classed("city--hover", false);
+              focus.attr("transform", "translate(-100,-100)");
+            }
+          
+          //audio context
+          var ac = this.AudioContext ? new AudioContext() : new webkitAudioContext();
+					ac.createGain();
+          
+          //generate oscillator
+          function osc(pitch, waveform){
+//             var ac = new AudioContext(),
+            oscillator = ac.createOscillator(),
+            oscillator.type = waveform;
+            oscillator.frequency.value = pitch;
+            gainNode = ac.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(ac.destination);
+            gainNode.gain.value = .2;
+            return {osc: oscillator, gain: gainNode};
+          };
+          
+          function tick() {
+            //add new values
+          	now = new Date()
+            
+						groups['HR'].data.push(fullData[maxIndex]['Heart_Rate'])
+            groups['HR'].path.attr('d', line)
+             
+            // when lower alarm limit changes
+            if (fullData[maxIndex]['Alarm_LOW'] != groups['alarm_bottom'].data[groups['alarm_bottom'].data.length-1]){           
+              index_change_thresh = maxIndex;
+              
+              med_change = svg.append("line")
+              	.attr({
+                	x1: index_change_thresh*800/60 - 85,
+                	x2: index_change_thresh*800/60 - 85,
+                	y1: 90,
+                	y2: height
+              })
+              .attr("class", "med_change")
+              .style("stroke", "#F25214")
+              .style("stroke-width", 3)
+              .style("stroke-dasharray", ("3, 3"));
+              
+              med_effect = svg.append("rect")
+              .attr({
+                	x: index_change_thresh*800/60 - 85,
+                	y: 90,
+              }) 
+                .attr("width", 800)
+                .attr("height", height - 90)
+                .style("fill", "url(#gradient)");
+ 						
+             med_image = svg.append('g')
+               	.append("svg:image")
+                .attr("xlink:href", "https://cdn3.iconfinder.com/data/icons/medical-8/512/medication-512.png")
+              	.attr("class", "add_med")
+               	.attr("x", function(d) { return index_change_thresh*800/60 - 85;})
+               	.attr("y", function(d) { return 100;})
+                .attr("width", 40)
+                .attr("height", 40)
+             		.on("mouseover", tip.show)
+        				.on("mouseout", tip.hide);
+;
+              
+//               med_image.append("text")
+//                	.attr("dy", function(d) { return -10;})
+//               	.text("Propranolol " + "<br>" + "30 mg" + "<br>" + "PO");
+                
+                
+              plus =  svg.append('g')
+               	.append("svg:image")
+                .attr("xlink:href", "http://www.freeiconspng.com/uploads/plus-icon-black-2.png")
+              	.attr("class", "add_med")
+                .attr("x", function(d) { return index_change_thresh*800/60 - 55;})
+                .attr("y", function(d) { return 108;})
+                .attr("width", 35)
+                .attr("height", 35);
+                
+//               med_name = svg.append("text")
+//               	.attr("class", "add_med")           
+//               	.attr("x", function(d) { return index_change_thresh*800/60 - 83;})
+//                	.attr("y", function(d) { return 155;})
+//               	.text("Propranolol" + "\n" +
+//                       "30 mg PO");
+                
+              
+            
+            };
+ 
+            
+            //Move medication along axis
+            if (fullData[maxIndex]['Alarm_LOW'] == groups['alarm_bottom'].data[groups['alarm_bottom'].data.length-1] && plus != null){
+              index_change_thresh -= 1.15;
+              plus
+                .transition()
+                .duration(duration)
+                .ease('linear') 
+                .attr("x", function(d) { return index_change_thresh*800/60 - 55;})
+              
+              med_image 
+                .transition()
+                .duration(duration)
+                .ease('linear') 
+                .attr("x", function(d) { return index_change_thresh*800/60 - 85;})
+             
+//               med_name.transition()
+//               	.duration(duration)
+//                 .ease('linear') 
+//                 .attr("x", function(d) { return index_change_thresh*800/60 - 83;})
+             
+              med_change
+              	.transition()
+              	.duration(duration)
+                 .ease('linear')
+                .attr("x1", function(d) { return index_change_thresh*800/60 -85;})
+                .attr("x2", function(d) { return index_change_thresh*800/60 -85;});
+
+              med_effect
+								.transition()
+              	.duration(duration)
+                 .ease('linear')
+              	.attr("x", function(d) { return index_change_thresh*800/60 -85;})
+//                 .attr("width", function(d) { return index_change_thresh*800/60 -85;})
+              
+               
+            };
+            groups['alarm_bottom'].data.push(fullData[maxIndex]['Alarm_LOW'])
+            groups['alarm_bottom'].path.attr('d', alarm)
+            groups['alarm_top'].data.push(fullData[maxIndex]['Alarm_HIGH'])
+            groups['alarm_top'].path.attr('d', alarm)
+            groups['alarm_seg'].data.push(fullData[maxIndex]['Alarm_Seg'])
+            groups['alarm_seg'].path.attr('d', line)
+          
+//             console.log(dem_image)
+//             index_change_thresh -= 1.15;
+            
+//             d3.select("add_med").attr('transform', 'translate(' + index_change_thresh*800/60 - 110 +')')
+//                   .transition()
+//             			.attr(attr("x", function(d) { return index_change_thresh*800/60 - 110;}))
+//                   .duration(duration)
+//                   .ease('linear')
+//                   .attr('transform', 'translate(' + x(now - (limit - 1) * duration) + ')')
+//                   .each('end', tick)
+               
+            maxIndex += 1;
+						     
+            // Shift domain
+              x.domain([now - (limit - 2) * duration, now - duration])
+
+              // Slide x-axis left
+              Xaxis.transition()
+                  .duration(duration)
+                  .ease('linear')
+                  .call(x.axis)
+						              
+              // Slide paths left
+              paths.attr('transform', null)
+                  .transition()
+                  .duration(duration)
+                  .ease('linear')
+                  .attr('transform', 'translate(' + x(now - (limit - 1) * duration) + ')')
+                  .each('end', tick)
+							
+              //play alarm sound
+              if (fullData[maxIndex]['Alarm_Seg']!=0){
+                var o = osc(pitch, 'sine');
+                
+                o.osc.start(ac.currentTime + 3.5);
+                o.osc.stop(ac.currentTime + 3.75);
+              	
+              }
+            	
+              // Remove oldest data point from each group
+              for (var name in groups) {
+                  var group = groups[name]
+                  group.data.shift()
+              }
+          }
+
+          tick()
+        })
+        </script>
+    </body>
+</html>
