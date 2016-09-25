@@ -1,5 +1,5 @@
 import numpy as np
-import sys
+import sys, getopt
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -17,6 +17,7 @@ class decisionnode:
         self.fb=fb # false decision nodes
         self.samples=samples # all sample ids of node
         self.gain = gain
+        
     def __str__(self):
         return "COL: %s | VALUE: %s | RESULTS: %s | \n NUM: %s | TB: %s | FB: %s \n\n" %(str(self.col), 
                                                     str(self.value),
@@ -54,10 +55,10 @@ def KL_div(PDF_dists):
     for pdf in PDF_dists:
         divs.append(stats.entropy(pdf, pdf_avg))
 
-    KL_div = sum(divs)
+    KL_div = sum(divs)#/float(len(divs))
     return KL_div
 
-def buildKLtree(rows, scorefun=KL_div, min_leaf_size = 100):
+def buildKLtree(rows = None, scorefun=KL_div, min_leaf_size = 100):
     print "MIN_LEAF_SIZE: ", min_leaf_size
 
     if len(rows) == 0: 
@@ -88,11 +89,13 @@ def buildKLtree(rows, scorefun=KL_div, min_leaf_size = 100):
         column_values = list(set([row[col] for row in rows]))
         print "Num of Unique Values: ", len(column_values) 
         
-        if type(column_values[0]) == float and min(column_values) == 0 and max(column_values) < 1.1:
+        #print "COLUMN_VALUES: ", column_values
+        if (type(column_values[0]) == float or type(column_values[0]) == int) and min(column_values) == 0:
             column_values = [0]
             print "Decreased column %d to binary." %(col)
             print column_values
         
+        #Only for age at this point since only continuous feature
         if len(column_values) > 25:
         #    #Consider doing unequal bins???
             #_, column_values = np.histogram(column_values, bins = 25)
@@ -114,6 +117,10 @@ def buildKLtree(rows, scorefun=KL_div, min_leaf_size = 100):
             pdfs_left = [item[-1] for item in list1]
             pdfs_right = [item[-1] for item in list2]
             gain = current_score - (scorefun(pdfs_left) + scorefun(pdfs_right))
+            #print "Gain: ", gain 
+            
+            #print "LIST1: ", len(list1)
+            #print len(list1) > min_leaf_size
             
             #change numbers for min leaf size
             if gain > best_gain and len(list1) >= min_leaf_size and len(list2) >= min_leaf_size:
@@ -149,50 +156,59 @@ def printtree(tree, columns, indent=''):
     else:
         # Print the criteria
         print 'Column ' + str(columns[tree.col])+' : '+str(tree.value)+'? '
-
+        print "Gain: ".format(tree.gain)
+        
         # Print the branches
         print indent+'True or > ->',
         printtree(tree.tb,columns, indent+'  ')
         print indent+'False or </= ->',
         printtree(tree.fb,columns, indent+'  ')
 
+def main(hours, min_sample_leaf):
+    import pickle
+    
+    hours = int(hours)
+    min_sample_leaf = int(min_sample_leaf)
+    # final_NO_SERIES = pd.read_json('JSONs/final_NO_SERIES.json')
+    # final_with_meds = pd.read_json('JSONs/final_with_meds_FINAL.json')
+    #final_with_meds = pd.read_json('JSONs/final_HR_segments_with_meds.json')
+    final_with_meds_and_dx = pd.read_json('JSONs/final_HR_segments_with_meds_and_dxs_FULL_' + str(hours) + '_hrs.json')
+
+    final_with_meds_and_dx = final_with_meds_and_dx.drop([u'hist', 'DOB', 'DeathDate', 'SA_ID', 'PAT_ID','date','end_time','start_time', 'length_of_block'], axis = 1)
+
+    #Move sample ID to beginning and pdf to end
+    cols = list(final_with_meds_and_dx)
+    cols.insert(0, cols.pop(cols.index('sample_ID')))
+    cols.append(cols.pop(cols.index('pdf')))
+    final_with_meds_and_dx = final_with_meds_and_dx.ix[:, cols]
+    #final_with_meds = final_with_meds[[final_with_meds.columns[-1]] + list(final_with_meds.columns[0:-1])]
+
+    # full_final = final_with_meds.join(final_NO_SERIES, how='inner', lsuffix = 'med')
+
+
+    #full_final['Gender'] = full_final['Gender'].replace(['Male', 'Female'], [0, 1])
+    #full_final.drop(['SA_ID', 'hist'], axis = 1, inplace = True)
+    #full_final.drop(['SA_ID'], axis = 1, inplace = True)
+    #full_final_subset = full_final[['Age', 'EthnicGroup', 'Gender', 'ICU_unit', 'Race', 'pdf']]
+
+    print "Finished loading in data."
+
+    print "Buliding tree."
+    #print "HR Bins - every 5 from 20 to 220."
+    print
+
+    t0 = time.time() 
+    FINAL_TREE = buildKLtree(rows = final_with_meds_and_dx.values, scorefun = KL_div, min_leaf_size = min_sample_leaf)
+    t1 = time.time()
+    total_build = t1 - t0
+    #FINAL_TREE = pickle.load(open('Pickles/final_min_leaf_' +str(min_sample_leaf)+ '.tree', 'rb'))
+    print "TOTAL TIME BUILDING TREE: ", total_build
+    print "FINISHED building tree. Now saving tree..."
+    pickle.dump(FINAL_TREE, open('Pickles/' + str(hours) + '_MEDS_DX_FULL_min_leaf_' +str(min_sample_leaf)+ 'AVG.tree', 'wb'))
+
+    print "Done saving. Now printing tree..."
+    printtree(FINAL_TREE, final_with_meds_and_dx.columns)
+
+
 if __name__ == '__main__':
-	
-	import pickle
-
-	# final_NO_SERIES = pd.read_json('JSONs/final_NO_SERIES.json')
-	# final_with_meds = pd.read_json('JSONs/final_with_meds_FINAL.json')
-	final_with_meds = pd.read_json('JSONs/final_HR_segments_with_meds.json')
-
-	final_with_meds = final_with_meds.drop([u'hist', 'DOB', 'DeathDate', 'SA_ID', 'PAT_ID','date','end_time','start_time', 'length_of_block'], axis = 1)
-
-	#Move sample ID to beginning
-	final_with_meds = final_with_meds[[final_with_meds.columns[-1]] + list(final_with_meds.columns[0:-1])]
-    
-	# full_final = final_with_meds.join(final_NO_SERIES, how='inner', lsuffix = 'med')
-
-	
-	#full_final['Gender'] = full_final['Gender'].replace(['Male', 'Female'], [0, 1])
-	#full_final.drop(['SA_ID', 'hist'], axis = 1, inplace = True)
-	#full_final.drop(['SA_ID'], axis = 1, inplace = True)
-	#full_final_subset = full_final[['Age', 'EthnicGroup', 'Gender', 'ICU_unit', 'Race', 'pdf']]
-
-	print "Finished loading in data."
-
-	print "Buliding tree."
-	#print "HR Bins - every 5 from 20 to 220."
-	print
-    
-	t0 = time.time()
-	min_sample_leaf = 100    
-	FINAL_TREE = buildKLtree(final_with_meds.values, scorefun = KL_div, min_leaf_size = min_sample_leaf)
-	t1 = time.time()
-	total_build = t1 - t0
-	#FINAL_TREE = pickle.load(open('Pickles/final_min_leaf_' +str(min_sample_leaf)+ '.tree', 'rb'))
-	print "TOTAL TIME BUILDING TREE: ", total_build
-	print "FINISHED building tree. Now saving tree..."
-	pickle.dump(FINAL_TREE, open('Pickles/final_min_leaf_' +str(min_sample_leaf)+ '.tree', 'wb'))
-    
-	print "Done saving. Now printing tree..."
-	printtree(FINAL_TREE, final_with_meds.columns)
-	
+    main(sys.argv[1], sys.argv[2])
